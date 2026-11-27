@@ -33,6 +33,9 @@ h2{margin:0 0 10px;font-size:19px}h3{margin:18px 0 8px;font-size:16px}
 @media(max-width:900px){.split{grid-template-columns:1fr}.list{position:static;max-height:220px}}
 .score{font-size:30px;font-weight:700}
 .pill{display:inline-block;background:var(--warnbg);color:var(--warn);border-radius:99px;padding:3px 10px;font-size:13px}
+.grp{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;border-top:1px solid var(--line);padding:12px 0}
+.grp .who{min-width:170px;flex:1}.nums button{min-width:60px}.nums button.deg{min-height:48px;align-items:center;justify-content:center}
+input.fc{width:78px;text-align:center;font-size:18px}input.fc.in{border:2px solid var(--d3);background:#e8f5e9}input.fc.out{border:2px solid var(--d1);background:#fdecea}
 .degs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
 .deg{display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;text-align:left;border-width:2px;min-height:96px;padding:10px}
 .deg b{font-size:14px}.deg span{font-size:13px;margin-top:4px;white-space:pre-wrap}.deg em{font-style:normal;font-size:13px;margin-top:auto;padding-top:6px;opacity:.8}
@@ -67,9 +70,9 @@ function stepGrid(){
   const crit=(id,afl,title,desc,range)=>({id,afl,title,desc,range:range||null,max:range?range[3][1]:null});
   return {pick:2,splitPts:{2:[0.5,1,1.5,2],4:[1,2,3,4],6:[1.5,3,5,6]},
   mobiles:[
-   {name:"Intensité",info:"Effort de 14 à 22 min, séries jusqu'à 4 min. FC entre 180 et 200 BPM. Repos jusqu'à 4 min, FC minimale de reprise 110 à 120."},
-   {name:"Durée",info:"Effort de 30 à 40 min, au moins 3 séries. FC entre 120 et 160 BPM. Repos jusqu'à 4 min, FC minimale de reprise 110 à 120."},
-   {name:"Coordination",info:"Effort de 20 à 30 min, 2 ou 4 séries. FC entre 140 et 180 BPM. Repos de 5 min au maximum, FC minimale de reprise 110 à 120."}],
+   {name:"Intensité",fc:[180,200],info:"Effort de 14 à 22 min, séries jusqu'à 4 min. FC entre 180 et 200 BPM. Repos jusqu'à 4 min, FC minimale de reprise 110 à 120."},
+   {name:"Durée",fc:[120,160],info:"Effort de 30 à 40 min, au moins 3 séries. FC entre 120 et 160 BPM. Repos jusqu'à 4 min, FC minimale de reprise 110 à 120."},
+   {name:"Coordination",fc:[140,180],info:"Effort de 20 à 30 min, 2 ou 4 séries. FC entre 140 et 180 BPM. Repos de 5 min au maximum, FC minimale de reprise 110 à 120."}],
   criteria:[
   crit("a1r",1,"Engagement moteur / Qualité de réalisation",[
 "FC cible atteinte < 50% des séries\nContinuité : de très nombreux arrêts\nRespect tempo : décalages permanents\nSécurité : absentes / erreurs permanentes / ne connaît pas tous les blocs\nS'assoit dans les phases de récupération",
@@ -115,7 +118,9 @@ function load(){
 }
 function valid(d){return d&&d.v===1&&Array.isArray(d.classes)&&d.classes.length>0&&d.classes.every(c=>c.grid&&Array.isArray(c.grid.criteria)&&c.grid.splitPts&&Array.isArray(c.grid.mobiles)&&Array.isArray(c.students)&&c.students.every(s=>s.deg&&s.pts&&Array.isArray(s.roles)))}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(DB))}catch(e){storageOK=false;toast("Enregistrement impossible : exportez une sauvegarde.")}}
-DB=load();
+/* Complète les données enregistrées par une version précédente, sans rien effacer. */
+function upgrade(d){const ref=stepGrid().mobiles;d.classes.forEach(c=>c.grid.mobiles.forEach(m=>{if(!m.fc){const r=ref.find(x=>x.name===m.name);if(r)m.fc=r.fc}}));return d}
+DB=upgrade(load());
 let view="eval", sel=0;
 const cls=()=>DB.classes[DB.cur]||DB.classes[0];
 
@@ -145,6 +150,75 @@ function missingList(g,s){
   if(nbRoles(g)&&n>0)out.push(`AFL3 – choisir ${n} rôle${n>1?"s":""}, puis le degré`);
   return out;
 }
+/* Fréquence cardiaque : fourchette personnelle si saisie, sinon celle du mobile. */
+function target(g,s){
+  if(Array.isArray(s.range)&&s.range[0]&&s.range[1])return s.range;
+  const m=g.mobiles.find(x=>x.name===s.mobile);return m&&m.fc&&m.fc[0]&&m.fc[1]?m.fc:null;
+}
+const nbSeries=c=>c.series||4;
+function fcStats(c,s){
+  const vals=(s.fc||[]).slice(0,nbSeries(c)).filter(v=>v>0),t=target(c.grid,s);
+  const ok=t?vals.filter(v=>v>=t[0]&&v<=t[1]).length:0;
+  return {n:vals.length,ok,t,pct:t&&vals.length?Math.round(ok/vals.length*100):null};
+}
+/* Repère indicatif : le référentiel cite <50 %, 50 %, 80 % et « chaque série » ; les valeurs intermédiaires sont rattachées au seuil inférieur. */
+const fcHint=(ok,n)=>ok===n?4:ok/n>=.8?3:ok/n>=.5?2:1;
+function fcSummary(c,s){
+  const f=fcStats(c,s);
+  if(!f.t)return '<span class="pill">Choisir le mobile</span>';
+  if(!f.n)return `<span class="mut">Cible ${f.t[0]}–${f.t[1]}</span>`;
+  const hint=c.grid.criteria.some(k=>k.id==="a1r")?` · repère FC : degré ${fcHint(f.ok,f.n)}`:"";
+  return `<b>${f.ok}/${f.n} dans la cible (${f.pct} %)</b><br><span class="mut">Cible ${f.t[0]}–${f.t[1]}${hint}</span>`;
+}
+function fcInputs(c,s){
+  const t=target(c.grid,s);
+  return Array.from({length:nbSeries(c)},(_,i)=>{const v=(s.fc||[])[i]||"";const k=v&&t?(v>=t[0]&&v<=t[1]?"in":"out"):"";
+    return `<div><label>Série ${i+1}</label><input class="fc ${k}" inputmode="numeric" maxlength="3" data-fc="${i}" data-sid="${s.id}" value="${v}" aria-label="FC série ${i+1}, ${esc(s.name)}" ${s.absent?"disabled":""}></div>`}).join("");
+}
+const mobSelect=(c,s)=>c.grid.mobiles.length?`<select data-mobsel data-sid="${s.id}" aria-label="Mobile de ${esc(s.name)}"><option value="">Mobile…</option>${c.grid.mobiles.map(m=>`<option ${s.mobile===m.name?"selected":""}>${esc(m.name)}</option>`).join("")}</select>`:"";
+const seriesCtl=c=>`<span class="mut">Séries : ${nbSeries(c)}</span><button data-series="-1" aria-label="Retirer une série">−</button><button data-series="1" aria-label="Ajouter une série">+</button>`;
+function bindFields(c){
+  const find=el=>c.students.find(x=>x.id===el.dataset.sid);
+  document.querySelectorAll("[data-fc]").forEach(el=>el.onchange=()=>{
+    const s=find(el),raw=el.value.trim(),v=raw===""?0:Number(raw);
+    if(raw!==""&&!(Number.isInteger(v)&&v>=40&&v<=240)){toast("FC attendue entre 40 et 240.");el.value=(s.fc||[])[+el.dataset.fc]||"";return}
+    s.fc=s.fc||[];s.fc[+el.dataset.fc]=v;save();
+    const t=target(c.grid,s);el.className="fc "+(v&&t?(v>=t[0]&&v<=t[1]?"in":"out"):"");
+    document.querySelector(`[data-sum="${s.id}"]`).innerHTML=fcSummary(c,s);
+  });
+  document.querySelectorAll("[data-mobsel]").forEach(el=>el.onchange=()=>{find(el).mobile=el.value;keep()});
+  document.querySelectorAll("[data-range]").forEach(el=>el.onchange=()=>{const s=find(el);s.range=s.range||[0,0];s.range[+el.dataset.range]=Math.round(num(el.value));keep()});
+}
+
+let tab="fc";
+function vGroup(c){
+  const g=c.grid;c.group=(c.group||[]).filter(i=>c.students.some(s=>s.id===i));
+  const list=c.group.map(i=>c.students.find(s=>s.id===i));
+  const tabs=[["fc","Relevé FC"],...g.criteria.map(k=>[k.id,k.title])];
+  if(!tabs.some(t=>t[0]===tab))tab="fc";
+  const k=g.criteria.find(x=>x.id===tab),pick=nbRoles(g);
+  const row=s=>{
+    let body;
+    if(s.absent)body='<span class="pill">Absent</span>';
+    else if(!k)body=`${mobSelect(c,s)}<div class="row">${fcInputs(c,s)}</div><div data-sum="${s.id}" style="min-width:190px">${fcSummary(c,s)}</div>`;
+    else if(k.afl===3&&pick&&!s.roles.includes(k.id))body=`<button data-role="${k.id}" data-sid="${s.id}">Choisir ce rôle</button>`;
+    else{
+      const d=s.deg[k.id];
+      body=`<div class="row nums">${[1,2,3,4].map(n=>`<button class="deg deg${n} ${d===n?"on":""}" aria-pressed="${d===n}" data-crit="${k.id}" data-deg="${n}" data-sid="${s.id}"><b>D${n}</b></button>`).join("")}</div>`;
+      if(k.afl===1)body+=`<div class="row nums" style="min-width:270px">${d?steps(k.range[d-1]).map(v=>`<button data-ptc="${k.id}" data-v="${v}" data-sid="${s.id}" class="${s.pts[k.id]===v?"on":""}">${fr(v)}</button>`).join(""):'<span class="mut">Points après le degré</span>'}</div>`;
+      else body+=`<span style="min-width:70px">${d?fr(points(g,k,s))+" pt":""}</span>`;
+      if(k.afl===3&&pick)body+=`<button data-role="${k.id}" data-sid="${s.id}">Retirer le rôle</button>`;
+    }
+    const f=fcStats(c,s),memo=k&&k.id==="a1r"&&f.pct!==null?`<br><span class="mut">FC : ${f.ok}/${f.n} dans la cible</span>`:"";
+    return `<div class="grp"><div class="who"><button data-open="${c.students.indexOf(s)}"><b>${esc(s.name)}</b></button><br><span class="mut">${status(g,s)}${k&&k.afl!==1?" · "+s.split:""}</span>${memo}</div>${body}</div>`;
+  };
+  $("#main").innerHTML=`<div class="card"><h2>Groupe <span class="mut">${list.length}/6</span></h2><div class="row">${c.students.map(s=>`<button data-grp="${s.id}" aria-pressed="${c.group.includes(s.id)}" class="${c.group.includes(s.id)?"on":""}">${esc(s.name)}</button>`).join("")}</div>${list.length?'<p style="margin-bottom:0"><button data-act="cleargroup">Vider le groupe</button></p>':""}</div>
+  ${list.length?`<div class="card"><div class="row">${tabs.map(([i,t])=>`<button data-tab="${i}" class="${tab===i?"on":""}">${esc(t.length>34?t.slice(0,33)+"…":t)}</button>`).join("")}</div>
+  ${k?`<details style="margin:12px 0"><summary style="min-height:32px;cursor:pointer">Repères des degrés : AFL${k.afl} – ${esc(k.title)}</summary><div class="degs" style="margin-top:8px">${[0,1,2,3].map(i=>`<div class="deg deg${i+1}" style="border:1px solid var(--line);border-radius:10px"><b>Degré ${i+1}</b><span>${esc(k.desc[i])}</span></div>`).join("")}</div></details>`:`<div class="row" style="margin:12px 0">${seriesCtl(c)}</div>`}
+  ${list.map(row).join("")}</div>`:'<div class="card">Touchez les élèves à observer ensemble (6 au maximum).</div>'}`;
+  bindFields(c);
+}
+
 function status(grid,s){if(s.absent)return "Absent";const r=result(grid,s);return r.complete?fr(r.total)+" /20":r.done+"/"+r.count}
 
 let tt;function toast(m){const t=$("#toast");t.textContent=m;t.style.display="block";clearTimeout(tt);tt=setTimeout(()=>t.style.display="none",3500)}
@@ -160,9 +234,9 @@ function render(){
   const c=cls();sel=Math.max(0,Math.min(sel,c.students.length-1));
   $("#head").innerHTML=`<strong>Éval EPS</strong>
   <select id="cl" aria-label="Classe">${DB.classes.map((k,i)=>`<option value="${i}" ${i===DB.cur?"selected":""}>${esc(k.name)}</option>`).join("")}</select>
-  ${[["eval","Évaluer"],["table","Tableau"],["grid","Grille"],["data","Classes et sauvegarde"]].map(([k,l])=>`<button data-view="${k}" class="${view===k?"on":""}">${l}</button>`).join("")}`;
+  ${[["eval","Évaluer"],["group","Groupe"],["table","Tableau"],["grid","Grille"],["data","Classes et sauvegarde"]].map(([k,l])=>`<button data-view="${k}" class="${view===k?"on":""}">${l}</button>`).join("")}`;
   $("#cl").onchange=e=>{DB.cur=+e.target.value;sel=0;save();render()};
-  ({eval:vEval,table:vTable,grid:vGrid,data:vData})[view](c);
+  ({eval:vEval,group:vGroup,table:vTable,grid:vGrid,data:vData})[view](c);
   if(!storageOK)$("#main").insertAdjacentHTML("afterbegin",'<p class="pill">Stockage indisponible ou illisible : les saisies risquent d\'être perdues.</p>');
 }
 
@@ -191,9 +265,12 @@ function vEval(c){
   ${!s.absent&&!r.complete?`<div style="margin-top:10px"><b>Il manque :</b><ul style="margin:4px 0;padding-left:20px">${missingList(g,s).map(m=>`<li>${esc(m)}</li>`).join("")}</ul></div>`:""}
   <div class="row" style="margin-top:12px"><span class="mut">Choix de l'élève AFL2 / AFL3 :</span>${SPLITS.map(v=>`<button data-split="${v}" class="${s.split===v?"on":""}">${v}</button>`).join("")}<button data-act="absent" class="${s.absent?"on":""}">Absent</button></div>
   ${g.mobiles.length?`<div class="row" style="margin-top:10px"><span class="mut">Mobile :</span>${g.mobiles.map(m=>`<button data-mob="${esc(m.name)}" class="${s.mobile===m.name?"on":""}">${esc(m.name)}</button>`).join("")}</div>${mob?`<p class="mut">${esc(mob.info)}</p>`:""}`:""}</div>
+  <div class="card"><p style="margin:0 0 8px"><b>Relevé de FC par série</b></p><div class="row">${fcInputs(c,s)}<div data-sum="${s.id}">${fcSummary(c,s)}</div></div><div class="row" style="margin-top:10px">${seriesCtl(c)}</div>
+  <div class="row" style="margin-top:10px"><span class="mut">Fourchette personnelle (facultatif) :</span>${[0,1].map(j=>`<input class="fc" inputmode="numeric" data-range="${j}" data-sid="${s.id}" value="${(s.range||[])[j]||""}" placeholder="${j?"maxi":"mini"}" aria-label="FC cible ${j?"maxi":"mini"}">`).join("")}</div></div>
   ${body}<div class="card"><label for="com">Observation</label><textarea id="com">${esc(s.note)}</textarea></div>
   <div class="row" style="justify-content:space-between"><button data-act="prev" ${sel===0?"disabled":""}>← Précédent</button><button class="primary" data-act="next" ${sel>=c.students.length-1?"disabled":""}>Élève suivant →</button></div></section></div>`;
   $("#com").oninput=e=>{s.note=e.target.value;save()};
+  bindFields(c);
 }
 
 function vTable(c){
@@ -213,12 +290,14 @@ function vGrid(c){
   ${g.criteria.map(k=>`<div class="card"><div class="row"><b>AFL${k.afl}</b><div style="flex:1;min-width:200px"><input data-f="title" data-id="${k.id}" value="${esc(k.title)}" aria-label="Intitulé du critère"></div><button class="danger" data-delcrit="${k.id}">Supprimer</button></div>
   <div class="g4" style="margin-top:10px">${[0,1,2,3].map(i=>`<div><label>Degré ${i+1}</label><textarea data-f="desc" data-i="${i}" data-id="${k.id}">${esc(k.desc[i])}</textarea>${k.afl===1?[0,1].map(j=>`<label>Points ${j?"maxi":"mini"}</label><input inputmode="decimal" data-f="range" data-j="${j}" data-i="${i}" data-id="${k.id}" value="${fr(k.range[i][j])}">`).join(""):""}</div>`).join("")}</div></div>`).join("")}
   <div class="row" style="margin-bottom:14px">${[1,2,3].map(a=>`<button data-add="${a}">+ Critère AFL${a}</button>`).join("")}</div>
+  ${g.mobiles.length?`<div class="card"><h2>Fréquence cardiaque cible par mobile</h2>${g.mobiles.map((m,i)=>`<div class="row" style="margin-bottom:8px"><b style="min-width:130px">${esc(m.name)}</b>${[0,1].map(j=>`<input class="fc" inputmode="numeric" data-mfc="${i}" data-j="${j}" value="${(m.fc||[])[j]||""}" aria-label="${esc(m.name)} ${j?"maxi":"mini"}">`).join("")}</div>`).join("")}</div>`:""}
   <div class="card"><h2>Points des AFL2 et AFL3</h2><p class="mut">Les critères d'un même AFL, ou les rôles choisis, comptent à parts égales.</p><label for="pick">Rôles à choisir en AFL3</label><select id="pick">${[0,1,2,3].map(n=>`<option value="${n}" ${(g.pick||0)===n?"selected":""}>${n||"Tous les critères comptent"}</option>`).join("")}</select>${[2,4,6].map(m=>`<h3>AFL noté sur ${m}</h3><div class="g4">${[0,1,2,3].map(i=>`<div><label>Degré ${i+1}</label><input inputmode="decimal" data-sp="${m}" data-i="${i}" value="${fr(g.splitPts[m][i])}"></div>`).join("")}</div>`).join("")}</div>`;
   document.querySelectorAll("[data-f]").forEach(el=>el.onchange=()=>{
     const k=g.criteria.find(x=>x.id===el.dataset.id),f=el.dataset.f,i=+el.dataset.i;
     if(f==="title")k.title=el.value;else if(f==="desc")k.desc[i]=el.value;else{k.range[i][+el.dataset.j]=num(el.value);k.max=k.range[3][1]}
     save();if(f==="range")render();
   });
+  document.querySelectorAll("[data-mfc]").forEach(el=>el.onchange=()=>{const m=g.mobiles[+el.dataset.mfc];m.fc=m.fc||[0,0];m.fc[+el.dataset.j]=Math.round(num(el.value));save()});
   $("#pick").onchange=e=>{g.pick=+e.target.value;save();render()};
   document.querySelectorAll("[data-sp]").forEach(el=>el.onchange=()=>{g.splitPts[el.dataset.sp][+el.dataset.i]=num(el.value);save();render()});
 }
@@ -232,9 +311,9 @@ function vData(c){
 function csv(c){
   const q=v=>{let t=String(v);if(/^[=+\-@\t\r]/.test(t))t="'"+t;return '"'+t.replace(/"/g,'""')+'"'};
   const g=c.grid;
-  const head=["Élève","Mobile",...g.criteria.flatMap(k=>[`AFL${k.afl} ${k.title} (degré)`,`AFL${k.afl} ${k.title} (points)`]),"AFL1","AFL2","AFL3","Répartition","Note /20","État","Observation"];
+  const head=["Élève","Mobile",...g.criteria.flatMap(k=>[`AFL${k.afl} ${k.title} (degré)`,`AFL${k.afl} ${k.title} (points)`]),"AFL1","AFL2","AFL3","Répartition","Note /20","État","Observation",...Array.from({length:nbSeries(c)},(_,i)=>"FC série "+(i+1)),"Séries dans la cible","FC cible"];
   const rows=c.students.map(s=>{const r=result(g,s),v=x=>s.absent?"":fr(x),used=applicable(g,s);
-    return [s.name,s.mobile,...g.criteria.flatMap(k=>{if(s.absent||!used.includes(k))return ["",""];const p=points(g,k,s);return [s.deg[k.id]||"",p===null?"":fr(p)]}),v(r.by[1]),v(r.by[2]),v(r.by[3]),s.split,!s.absent&&r.complete?fr(r.total):"",s.absent?"Absent":r.complete?"Complet":"Incomplet",s.note]});
+    return [s.name,s.mobile,...g.criteria.flatMap(k=>{if(s.absent||!used.includes(k))return ["",""];const p=points(g,k,s);return [s.deg[k.id]||"",p===null?"":fr(p)]}),v(r.by[1]),v(r.by[2]),v(r.by[3]),s.split,!s.absent&&r.complete?fr(r.total):"",s.absent?"Absent":r.complete?"Complet":"Incomplet",s.note,...Array.from({length:nbSeries(c)},(_,i)=>(s.fc||[])[i]||""),...(f=>[f.pct===null?"":`${f.ok}/${f.n}`,f.t?f.t.join("-"):""])(fcStats(c,s))]});
   return [head,...rows].map(l=>l.map(q).join(";")).join("\r\n");
 }
 async function share(name,text,type){
@@ -247,6 +326,7 @@ async function copy(t){try{await navigator.clipboard.writeText(t);toast("Copié.
 const today=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")};
 
 const acts={
+  cleargroup(){cls().group=[];keep()},
   prev(){sel--;render();scrollTo(0,0)},
   next(){sel++;render();scrollTo(0,0)},
   absent(){const s=cls().students[sel];s.absent=!s.absent;save();render()},
@@ -255,14 +335,14 @@ const acts={
   backup(){share(`sauvegarde-eval-eps-${today()}.json`,JSON.stringify(DB),"application/json")},
   copybackup(){copy(JSON.stringify(DB))},
   restore(){dialog('<h2>Restaurer</h2><p class="mut">La sauvegarde remplacera toutes les données actuelles. Choisissez un fichier ou collez son contenu.</p><input type="file" id="f" accept=".json,application/json"><textarea id="t" placeholder="Ou collez ici" style="margin-top:10px"></textarea>',d=>{
-    const apply=t=>{try{const x=JSON.parse(t);if(!valid(x))throw 0;DB=x;sel=0;storageOK=true;save();render();toast("Sauvegarde restaurée.")}catch(e){toast("Sauvegarde illisible : rien n'a été modifié.")}};
+    const apply=t=>{try{const x=JSON.parse(t);if(!valid(x))throw 0;DB=upgrade(x);sel=0;storageOK=true;save();render();toast("Sauvegarde restaurée.")}catch(e){toast("Sauvegarde illisible : rien n'a été modifié.")}};
     const f=d.querySelector("#f").files[0];if(f)f.text().then(apply);else apply(d.querySelector("#t").value)})},
   newclass(){dialog('<h2>Nouvelle classe</h2><label>Nom (classe et APSA)</label><input id="n" placeholder="Terminale 3 – Demi-fond"><label style="margin-top:10px">Élèves, un par ligne</label><textarea id="l"></textarea><p class="mut">La grille de la classe affichée est recopiée.</p>',d=>{
     const name=d.querySelector("#n").value.trim();if(!name){toast("Indiquez un nom de classe.");return false}
     DB.classes.push({id:uid(),name,grid:JSON.parse(JSON.stringify(cls().grid)),students:lines(d).map(newStudent)});DB.cur=DB.classes.length-1;sel=0;save()})},
   importclass(){dialog('<h2>Importer une classe</h2><p class="mut">La classe du fichier est ajoutée aux vôtres, sans rien effacer.</p><input type="file" id="f" accept=".json,application/json">',d=>{
     const f=d.querySelector("#f").files[0];if(!f){toast("Choisissez un fichier.");return false}
-    f.text().then(t=>{try{const x=JSON.parse(t);if(!valid(x))throw 0;const n=DB.classes.length;DB.classes.push(...x.classes.map(k=>({...k,id:uid()})));DB.cur=n;sel=0;save();view="eval";render();toast("Classe importée.")}catch(e){toast("Fichier illisible : rien n'a été modifié.")}})})},
+    f.text().then(t=>{try{const x=JSON.parse(t);if(!valid(x))throw 0;upgrade(x);const n=DB.classes.length;DB.classes.push(...x.classes.map(k=>({...k,id:uid()})));DB.cur=n;sel=0;save();view="eval";render();toast("Classe importée.")}catch(e){toast("Fichier illisible : rien n'a été modifié.")}})})},
   rename(){dialog(`<h2>Renommer</h2><input id="n" value="${esc(cls().name)}">`,d=>{const n=d.querySelector("#n").value.trim();if(!n)return false;cls().name=n;save()})},
   delclass(){if(DB.classes.length===1){toast("Créez une autre classe avant de supprimer celle-ci.");return}
     dialog(`<h2>Supprimer « ${esc(cls().name)} » ?</h2><p>Élèves, grille et notes de cette classe seront effacés définitivement.</p>`,()=>{DB.classes.splice(DB.cur,1);DB.cur=0;sel=0;save()})},
@@ -271,22 +351,26 @@ const acts={
 const lines=d=>d.querySelector("#l").value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
 
 /* Enregistre et redessine sans perdre la position de lecture. */
-function keep(){save();const y=scrollY,l=$(".list").scrollTop;render();scrollTo(0,y);$(".list").scrollTop=l}
+function keep(){save();const y=scrollY,l=$(".list")?.scrollTop;render();scrollTo(0,y);if($(".list"))$(".list").scrollTop=l}
 document.addEventListener("click",e=>{
   const t=e.target.closest("button,tr[data-open]");if(!t||t.closest("dialog"))return;
   const d=t.dataset,c=cls();
+  const who=()=>d.sid?c.students.find(x=>x.id===d.sid):c.students[sel];
   if(d.view){view=d.view;render()}
   else if(d.stu!==undefined){sel=+d.stu;render()}
   else if(d.open!==undefined){sel=+d.open;view="eval";render()}
-  else if(d.crit){const s=c.students[sel],v=+d.deg;if(s.deg[d.crit]===v)delete s.deg[d.crit];else s.deg[d.crit]=v;delete s.pts[d.crit];keep()}
-  else if(d.ptc){c.students[sel].pts[d.ptc]=+d.v;keep()}
-  else if(d.role){const s=c.students[sel];s.roles=s.roles.filter(i=>c.grid.criteria.some(k=>k.id===i));
+  else if(d.crit){const s=who(),v=+d.deg;if(s.deg[d.crit]===v)delete s.deg[d.crit];else s.deg[d.crit]=v;delete s.pts[d.crit];keep()}
+  else if(d.ptc){who().pts[d.ptc]=+d.v;keep()}
+  else if(d.role){const s=who();s.roles=s.roles.filter(i=>c.grid.criteria.some(k=>k.id===i));
     if(s.roles.includes(d.role))s.roles=s.roles.filter(i=>i!==d.role);else if(s.roles.length<nbRoles(c.grid))s.roles.push(d.role);else{toast("Retirez d'abord un des rôles choisis.");return}keep()}
   else if(d.mob){const s=c.students[sel];s.mobile=s.mobile===d.mob?"":d.mob;keep()}
   else if(d.split){c.students[sel].split=d.split;keep()}
   else if(d.add){const a=+d.add;c.grid.criteria.push({id:uid(),afl:a,title:"Nouveau critère",desc:["","","",""],max:a===1?4:null,range:a===1?[[0,1],[1.5,2],[2.5,3],[3.5,4]]:null});c.grid.criteria.sort((x,y)=>x.afl-y.afl);save();render()}
   else if(d.delcrit){dialog("<h2>Supprimer ce critère ?</h2><p>Les degrés saisis pour ce critère ne compteront plus.</p>",()=>{c.grid.criteria=c.grid.criteria.filter(k=>k.id!==d.delcrit);save()})}
   else if(d.delstu){const s=c.students.find(x=>x.id===d.delstu);dialog(`<h2>Retirer ${esc(s.name)} ?</h2><p>Son évaluation sera effacée définitivement.</p>`,()=>{c.students=c.students.filter(x=>x!==s);save()})}
+  else if(d.grp){const i=c.group.indexOf(d.grp);if(i>=0)c.group.splice(i,1);else if(c.group.length<6)c.group.push(d.grp);else{toast("6 élèves au maximum : retirez-en un.");return}keep()}
+  else if(d.tab){tab=d.tab;keep()}
+  else if(d.series){c.series=Math.min(8,Math.max(1,nbSeries(c)+ +d.series));keep()}
   else if(d.act)acts[d.act]();
 });
 render();
