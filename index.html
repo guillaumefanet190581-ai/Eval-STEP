@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Éval EPS">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<title>Éval EPS – Évaluation CCF</title>
+<style>
+:root{--bg:#f3f5f4;--card:#fff;--ink:#15211d;--mut:#5d6d67;--line:#d8e0dd;--acc:#0b6e5b;--soft:#e2f1ec;--warn:#9a4b00;--warnbg:#fff0dc;--d1:#b42318;--d2:#b65c00;--d3:#2e7d32;--d4:#155eaf}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.4 -apple-system,system-ui,sans-serif;background:var(--bg);color:var(--ink);padding-bottom:env(safe-area-inset-bottom)}
+header{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--line);padding:10px 16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+header strong{font-size:18px;margin-right:8px}
+button,select,input,textarea{font:inherit;color:inherit}
+button,select{min-height:44px;border:1px solid var(--line);background:var(--card);border-radius:10px;padding:8px 14px;cursor:pointer;touch-action:manipulation}
+button.on{background:var(--acc);border-color:var(--acc);color:#fff}
+button.primary{background:var(--acc);border-color:var(--acc);color:#fff;font-weight:600}
+button.danger{color:var(--d1)}
+input,textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:10px;background:#fff}
+textarea{min-height:76px;resize:vertical}
+main{padding:16px;max-width:1300px;margin:auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+h2{margin:0 0 10px;font-size:19px}h3{margin:18px 0 8px;font-size:16px}
+.mut{color:var(--mut);font-size:14px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.split{display:grid;grid-template-columns:250px minmax(0,1fr);gap:14px;align-items:start}
+.list{position:sticky;top:76px;max-height:calc(100vh - 96px);overflow:auto;padding:8px}
+.list button{display:flex;justify-content:space-between;gap:8px;width:100%;text-align:left;margin-bottom:6px}
+.list small{opacity:.75;white-space:nowrap}
+@media(max-width:900px){.split{grid-template-columns:1fr}.list{position:static;max-height:220px}}
+.score{font-size:30px;font-weight:700}
+.pill{display:inline-block;background:var(--warnbg);color:var(--warn);border-radius:99px;padding:3px 10px;font-size:13px}
+.degs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.deg{display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;text-align:left;border-width:2px;min-height:96px;padding:10px}
+.deg b{font-size:14px}.deg span{font-size:13px;margin-top:4px;white-space:pre-wrap}.deg em{font-style:normal;font-size:13px;margin-top:auto;padding-top:6px;opacity:.8}
+.deg1 b{color:var(--d1)}.deg2 b{color:var(--d2)}.deg3 b{color:var(--d3)}.deg4 b{color:var(--d4)}
+.deg.on{color:#fff}.deg.on b{color:#fff}
+.deg1.on{background:var(--d1);border-color:var(--d1)}.deg2.on{background:var(--d2);border-color:var(--d2)}.deg3.on{background:var(--d3);border-color:var(--d3)}.deg4.on{background:var(--d4);border-color:var(--d4)}
+.tw{overflow-x:auto}
+table{border-collapse:collapse;width:100%}th,td{border-bottom:1px solid var(--line);padding:8px;text-align:center;white-space:nowrap}th:first-child,td:first-child{text-align:left}
+tbody tr{cursor:pointer}
+.g4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+@media(max-width:600px){.degs,.g4{grid-template-columns:repeat(2,minmax(0,1fr))}}
+label{display:block;font-size:13px;color:var(--mut);margin-bottom:3px}
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:10px;display:none;z-index:9;max-width:90vw}
+dialog{border:0;border-radius:14px;padding:20px;max-width:min(560px,92vw);width:100%}dialog::backdrop{background:rgba(0,0,0,.45)}
+</style>
+</head>
+<body>
+<header id="head"></header>
+<main id="main"></main>
+<div id="toast" role="status"></div>
+<dialog id="dlg"></dialog>
+<script>
+"use strict";
+const KEY="evalEPS.v1", SPLITS=["4/4","6/2","2/6"];
+const $=s=>document.querySelector(s);
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const num=v=>{const n=parseFloat(String(v).replace(",","."));return isFinite(n)&&n>=0?n:0};
+const fr=n=>(Math.round(n*100)/100).toString().replace(".",",");
+
+function stepGrid(){
+  const crit=(id,afl,title,desc,range)=>({id,afl,title,desc,range:range||null,max:range?range[3][1]:null});
+  return {pick:2,splitPts:{2:[0.5,1,1.5,2],4:[1,2,3,4],6:[1.5,3,5,6]},
+  mobiles:[
+   {name:"Intensité",info:"Effort de 14 à 22 min, séries jusqu'à 4 min. FC entre 180 et 200 BPM. Repos jusqu'à 4 min, FC minimale de reprise 110 à 120."},
+   {name:"Durée",info:"Effort de 30 à 40 min, au moins 3 séries. FC entre 120 et 160 BPM. Repos jusqu'à 4 min, FC minimale de reprise 110 à 120."},
+   {name:"Coordination",info:"Effort de 20 à 30 min, 2 ou 4 séries. FC entre 140 et 180 BPM. Repos de 5 min au maximum, FC minimale de reprise 110 à 120."}],
+  criteria:[
+  crit("a1r",1,"Engagement moteur / Qualité de réalisation",[
+"FC cible atteinte < 50% des séries\nContinuité : de très nombreux arrêts\nRespect tempo : décalages permanents\nSécurité : absentes / erreurs permanentes / ne connaît pas tous les blocs\nS'assoit dans les phases de récupération",
+"FC cible atteinte dans 50% des séries\nContinuité : quelques arrêts avec une reprise rapide\nRespect tempo : décalages fréquents\nSécurité : inappropriées / erreurs fréquentes / connaît 2/3 des blocs\nReste derrière son Step pendant les phases de récupération",
+"FC cible atteinte dans 80% des séries\nContinuité : quelques hésitations en fonction des blocs (une partie difficile…)\nRespect tempo : décalage ponctuel\nSécurité : partiels / erreurs ponctuelles\nConnaît tous les blocs, utilisation partielle des bras pour réguler sa FC\nS'hydrate pendant les phases de récupération",
+"FC dans la fourchette cible à la fin de chaque série\nContinuité : fluide, anticipée\nRespect tempo : aucun décalage dans le tempo\nSécurité : appropriée / aucune erreur\nConnaissance des blocs / anticipation des pas / utilisation des bras, dynamisme pour réguler sa FC\nRécupération active, hydratation"],
+[[0,2],[2.5,4],[4.5,6],[6.5,8]]),
+  crit("a1p",1,"Projet et analyse",[
+"Manque de cohérence :\nChoix du mobile personnel mais peu explicite.\nLes séquences, la composition et les paramètres choisis ne sont pas en adéquation avec les effets recherchés (pas de carnet d'entraînement ou pas de cohérence avec les effets constatés du carnet).\nBilan quasi inexistant.\nArrive à donner un ou 2 facteurs d'analyse qualitative de sa prestation et très peu d'explications.",
+"Début de cohérence :\nLe choix du mobile et des séquences sont adaptés aux effets recherchés énergétiques (FC) et biomécaniques.\nBanalités, généralités. Pas ou peu de connaissances au niveau des champs énergétiques et biomécaniques.\nBilan sommaire (3 à 4 facteurs d'analyse mais peu d'argumentation).",
+"Bonne cohérence :\nLe choix du mobile et des séquences, de la composition et des paramètres utilisés sont adaptés aux effets recherchés énergétiques (FC) et biomécaniques (et correspondent aux effets constatés du carnet d'entraînement).\nBilan réaliste : la prestation est décrite à partir des sensations éprouvées et des constats sur les critères du registre « réalisé ». Des explications sont formulées. Peu de régulations envisagées. (5 facteurs d'analyse : rythme, coordination, mémorisation, posture, sensation, FC)",
+"Cohérence affirmée :\nLe choix du mobile, des séquences, de la composition et des paramètres utilisés sont argumentés et adaptés aux effets recherchés et aux ressources : projet personnel de développement justifié (en accord avec les effets constatés du carnet d'entraînement).\nBilan argumenté : la prestation est analysée avec des explications à partir des sensations éprouvées. Les effets sont décrits, leurs causes, les régulations potentielles et les perspectives envisagées. La terminologie utilisée est adaptée."],
+[[0.5,1],[1.5,2],[2.5,3],[3.5,4]]),
+  crit("a2",2,"Engagement, investissement, motivation de l'élève du début à la fin du cours",[
+"Participation irrégulière, sans recherche de progrès\nRespecte les consignes la plupart du temps et participe à la majeure partie des exercices et des séances.\nManque d'implication\nLes conseils sont peu entendus, peu appliqués\nAccepte peu un nouveau partenaire d'entraînement.\nÉvite l'installation et le rangement du matériel\nPeu d'analyse de résultats et de description de la tâche\nRessentis exprimés de façon aléatoire.\nPas de formulation du projet personnel",
+"Participation régulière. Engagement superficiel et progrès limité.\nParticipe à chaque séance et respecte les consignes.\nEst à l'écoute des conseils, mais ne les applique que partiellement, lorsque le prof est derrière lui ou selon son partenaire d'entraînement.\nConstate les résultats obtenus sans les justifier\nCapable d'identifier ses ressentis mais pas en lien avec les résultats obtenus\nNe croise pas la charge de travail et les effets pour réguler.\nParamètres cohérents mais bilan peu développé.\nProjet de développement basique non personnalisé",
+"Participation régulière et suffisamment investi pour progresser\nParticipe à chaque séance et respecte les consignes.\nCherche à appliquer les conseils même sans la présence de l'enseignant,\nUtilise les outils d'entraînement proposés par l'enseignant. Est curieux et demande de l'aide lorsqu'il en a vraiment besoin.\nJustifie son mobile en s'appuyant sur les éléments de compétences\nRessentis reliés partiellement aux résultats.\nCroise ponctuellement la charge de travail et les effets pour réguler car capable de reconnaître ses ressentis.\nChoix cohérents de paramètres et des bilans complets\nProjet personnel cohérent en rapport avec les caractéristiques de l'élève",
+"Investissement rigoureux. Progrès évidents.\nParticipe à chaque séance et respecte les consignes.\nLes conseils sont appliqués dès l'échauffement (en se rappelant ce qui a été dit la séance précédente)\nExploite les outils proposés par l'enseignant. Est capable d'analyser sa prestation pour se corriger.\nJustification des choix et des résultats obtenus\nRessentis exprimés précisément en lien avec les résultats obtenus.\nCroise régulièrement la charge de travail et effets pour réguler.\nDes évolutions cohérentes dans les choix de paramètres au regard de bilans complets\nProjet personnel de développement adapté et construit tout au long de la séquence."]),
+  crit("a3o",3,"Rôle organisateur / entraîneur : tenue du cahier d'entraînement (CE)",[
+"Carnet d'entraînement non rendu\nL'élève reste passif (aucune interaction avec ses camarades)",
+"CE incomplet : il manque des séances.\nL'élève vérifie parfois quelques CE. Il a des difficultés à remplir et faire des liens entre les sensations éprouvées et le travail réalisé.",
+"CE complet : présente toutes les séances mais les paramètres choisis sont peu explicités.\nL'élève est actif dans son groupe et vérifie que tous les CE sont remplis. Trouve sa place sans s'imposer.",
+"Tous les CE sont complets et régulièrement renseignés : forme de pratique choisie, paramètres modifiés, ressentis.\nL'élève est actif dans son groupe et très méthodique. Il est capable de conseiller son camarade lors du remplissage du CE."]),
+  crit("a3s",3,"Rôle d'observateur / spectateur « averti »",[
+"Absent, pas d'implication dans le rôle\nL'élève regarde la composition\nDifficultés à repérer des critères.",
+"Implication passagère dans le rôle, à retardement. A besoin d'aide\nL'élève observe la composition\nRepère de façon juste 2 à 4 critères",
+"Réactif, n'a pas besoin du prof pour investir correctement ce rôle.\nL'élève situe la prestation\nRepère de façon juste 4 à 6 critères",
+"Autonome et efficace\nL'élève analyse la composition\nRepère de façon juste au moins 7 critères"]),
+  crit("a3c",3,"Rôle de chorégraphe : concepteur de bloc",[
+"Absent, pas d'implication dans le rôle\nL'élève suit son groupe et ne propose pas de mouvements. Il est peu investi dans le projet construction",
+"Implication passagère dans le rôle, à retardement. A besoin de l'aide du prof ou d'un camarade\nL'élève commence à prendre des initiatives.",
+"Réactif, n'a pas besoin du prof pour investir correctement ce rôle.\nL'élève reconnaît toutes les sensations et échange avec ses camarades. Il est force de proposition",
+"Autonome et efficace\nL'élève exploite au maximum les capacités de chacun et propose des contenus adaptés au projet"])]};
+}
+const newStudent=name=>({id:uid(),name,deg:{},pts:{},roles:[],mobile:"",split:"4/4",absent:false,note:""});
+function demo(){
+  return {v:1,cur:0,classes:[{id:uid(),name:"Classe d'essai – STEP",grid:stepGrid(),students:["Élève A","Élève B","Élève C","Élève D"].map(newStudent)}]};
+}
+let storageOK=true, DB;
+function load(){
+  try{const raw=localStorage.getItem(KEY);if(raw){const d=JSON.parse(raw);if(valid(d))return d;storageOK=false;}}catch(e){storageOK=false}
+  return demo();
+}
+function valid(d){return d&&d.v===1&&Array.isArray(d.classes)&&d.classes.length>0&&d.classes.every(c=>c.grid&&Array.isArray(c.grid.criteria)&&c.grid.splitPts&&Array.isArray(c.grid.mobiles)&&Array.isArray(c.students)&&c.students.every(s=>s.deg&&s.pts&&Array.isArray(s.roles)))}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(DB))}catch(e){storageOK=false;toast("Enregistrement impossible : exportez une sauvegarde.")}}
+DB=load();
+let view="eval", sel=0;
+const cls=()=>DB.classes[DB.cur]||DB.classes[0];
+
+function maxFor(c,s){if(c.afl===1)return c.max;const [a,b]=s.split.split("/").map(Number);return c.afl===2?a:b}
+const roleCrits=g=>g.criteria.filter(x=>x.afl===3);
+const nbRoles=g=>g.pick&&g.pick<roleCrits(g).length?g.pick:0;
+/* Critères qui comptent pour cet élève : en AFL3, seulement les rôles choisis. */
+const applicable=(g,s)=>g.criteria.filter(c=>c.afl!==3||!nbRoles(g)||s.roles.includes(c.id));
+/* AFL2 et AFL3 : plusieurs critères (ou rôles) se partagent les points à parts égales. */
+function points(g,c,s){
+  const d=s.deg[c.id];if(!d)return null;
+  if(c.afl===1){const v=s.pts[c.id],[lo,hi]=c.range[d-1];return typeof v==="number"&&v>=lo&&v<=hi?v:null}
+  const n=c.afl===3&&nbRoles(g)?nbRoles(g):g.criteria.filter(x=>x.afl===c.afl).length;
+  return g.splitPts[maxFor(c,s)][d-1]/n;
+}
+function result(g,s){
+  const list=applicable(g,s), missing=nbRoles(g)?Math.max(0,nbRoles(g)-list.filter(c=>c.afl===3).length):0;
+  let total=0,done=0;const by={1:0,2:0,3:0};
+  for(const c of list){const p=points(g,c,s);if(p!==null){total+=p;by[c.afl]+=p;done++}}
+  const count=list.length+missing;
+  return {total,by,done,count,complete:done===count&&done>0};
+}
+/* Liste en clair ce qu'il reste à saisir pour obtenir la note. */
+function missingList(g,s){
+  const used=applicable(g,s),out=used.filter(c=>points(g,c,s)===null).map(c=>`AFL${c.afl} – ${c.title} : ${!s.deg[c.id]?(c.afl===1?"degré et points":"degré"):"points dans le degré "+s.deg[c.id]}`);
+  const n=nbRoles(g)-used.filter(c=>c.afl===3).length;
+  if(nbRoles(g)&&n>0)out.push(`AFL3 – choisir ${n} rôle${n>1?"s":""}, puis le degré`);
+  return out;
+}
+function status(grid,s){if(s.absent)return "Absent";const r=result(grid,s);return r.complete?fr(r.total)+" /20":r.done+"/"+r.count}
+
+let tt;function toast(m){const t=$("#toast");t.textContent=m;t.style.display="block";clearTimeout(tt);tt=setTimeout(()=>t.style.display="none",3500)}
+function dialog(html,onOk){
+  const d=$("#dlg");d.innerHTML=html+'<div class="row" style="justify-content:flex-end;margin-top:16px"><button data-x>Annuler</button><button class="primary" data-ok>Valider</button></div>';
+  d.querySelector("[data-x]").onclick=()=>d.close();
+  d.querySelector("[data-ok]").onclick=()=>{if(onOk(d)!==false){d.close();render()}};
+  d.showModal();
+}
+
+function render(){
+  if(DB.cur>=DB.classes.length)DB.cur=0;
+  const c=cls();sel=Math.max(0,Math.min(sel,c.students.length-1));
+  $("#head").innerHTML=`<strong>Éval EPS</strong>
+  <select id="cl" aria-label="Classe">${DB.classes.map((k,i)=>`<option value="${i}" ${i===DB.cur?"selected":""}>${esc(k.name)}</option>`).join("")}</select>
+  ${[["eval","Évaluer"],["table","Tableau"],["grid","Grille"],["data","Classes et sauvegarde"]].map(([k,l])=>`<button data-view="${k}" class="${view===k?"on":""}">${l}</button>`).join("")}`;
+  $("#cl").onchange=e=>{DB.cur=+e.target.value;sel=0;save();render()};
+  ({eval:vEval,table:vTable,grid:vGrid,data:vData})[view](c);
+  if(!storageOK)$("#main").insertAdjacentHTML("afterbegin",'<p class="pill">Stockage indisponible ou illisible : les saisies risquent d\'être perdues.</p>');
+}
+
+const steps=([lo,hi])=>{const a=[];for(let v=lo;v<=hi+1e-9;v+=.5)a.push(Math.round(v*100)/100);return a};
+function vEval(c){
+  const s=c.students[sel];
+  if(!s){$("#main").innerHTML='<div class="card">Aucun élève. Ajoutez-en dans « Classes et sauvegarde ».</div>';return}
+  const g=c.grid,r=result(g,s),off=s.absent?"disabled":"",pick=nbRoles(g);
+  const mob=g.mobiles.find(m=>m.name===s.mobile);
+  const [x,y]=s.split.split("/").map(Number);
+  const card=k=>`<div class="card"><p style="margin:0 0 8px"><b>${esc(k.title)}</b>${k.afl===1?` <span class="mut">sur ${fr(k.max)} pts</span>`:""}</p><div class="degs">${[1,2,3,4].map(d=>{
+    const on=s.deg[k.id]===d;
+    const label=k.afl===1?`${fr(k.range[d-1][0])} à ${fr(k.range[d-1][1])} pts`:`${fr(points(g,k,{...s,deg:{[k.id]:d}}))} pt`;
+    return `<button class="deg deg${d} ${on?"on":""}" aria-pressed="${on}" data-crit="${k.id}" data-deg="${d}" ${off}><b>Degré ${d} · ${label}</b><span>${esc(k.desc[d-1])}</span></button>`}).join("")}</div>
+    ${k.afl===1&&s.deg[k.id]&&!s.absent?`<div class="row" style="margin-top:10px"><span class="${points(g,k,s)===null?"pill":"mut"}">Points dans le degré ${s.deg[k.id]} :</span>${steps(k.range[s.deg[k.id]-1]).map(v=>`<button data-ptc="${k.id}" data-v="${v}" class="${s.pts[k.id]===v?"on":""}">${fr(v)}</button>`).join("")}</div>`:""}</div>`;
+  let body="";
+  for(const a of [1,2,3]){
+    const all=g.criteria.filter(k=>k.afl===a);if(!all.length)continue;
+    const max=a===1?all.reduce((t,k)=>t+k.max,0):a===2?x:y;
+    body+=`<h3>AFL${a} · ${fr(r.by[a])} / ${fr(max)} pts</h3>`;
+    if(a===3&&pick)body+=`<div class="card"><p style="margin:0 0 8px">Choisir ${pick} rôles <span class="mut">(${s.roles.filter(i=>all.some(k=>k.id===i)).length}/${pick})</span></p><div class="row">${all.map(k=>`<button data-role="${k.id}" aria-pressed="${s.roles.includes(k.id)}" class="${s.roles.includes(k.id)?"on":""}" ${off}>${esc(k.title)}</button>`).join("")}</div></div>`;
+    body+=applicable(g,s).filter(k=>k.afl===a).map(card).join("");
+  }
+  $("#main").innerHTML=`<div class="split"><nav class="card list" aria-label="Élèves">${c.students.map((e,i)=>`<button data-stu="${i}" class="${i===sel?"on":""}"><span>${esc(e.name)}</span><small>${status(g,e)}</small></button>`).join("")}</nav>
+  <section><div class="card"><div class="row" style="justify-content:space-between"><div><h2>${esc(s.name)}</h2>${s.absent?'<span class="pill">Absent : pas de note</span>':r.complete?'<span class="mut">Évaluation complète</span>':`<span class="pill">Incomplet : ${r.done}/${r.count} critères, total provisoire</span>`}</div><div class="score">${s.absent?"–":fr(r.total)+" /20"}</div></div>
+  ${!s.absent&&!r.complete?`<div style="margin-top:10px"><b>Il manque :</b><ul style="margin:4px 0;padding-left:20px">${missingList(g,s).map(m=>`<li>${esc(m)}</li>`).join("")}</ul></div>`:""}
+  <div class="row" style="margin-top:12px"><span class="mut">Choix de l'élève AFL2 / AFL3 :</span>${SPLITS.map(v=>`<button data-split="${v}" class="${s.split===v?"on":""}">${v}</button>`).join("")}<button data-act="absent" class="${s.absent?"on":""}">Absent</button></div>
+  ${g.mobiles.length?`<div class="row" style="margin-top:10px"><span class="mut">Mobile :</span>${g.mobiles.map(m=>`<button data-mob="${esc(m.name)}" class="${s.mobile===m.name?"on":""}">${esc(m.name)}</button>`).join("")}</div>${mob?`<p class="mut">${esc(mob.info)}</p>`:""}`:""}</div>
+  ${body}<div class="card"><label for="com">Observation</label><textarea id="com">${esc(s.note)}</textarea></div>
+  <div class="row" style="justify-content:space-between"><button data-act="prev" ${sel===0?"disabled":""}>← Précédent</button><button class="primary" data-act="next" ${sel>=c.students.length-1?"disabled":""}>Élève suivant →</button></div></section></div>`;
+  $("#com").oninput=e=>{s.note=e.target.value;save()};
+}
+
+function vTable(c){
+  const rows=c.students.map((s,i)=>{const r=result(c.grid,s);const v=a=>s.absent?"–":fr(r.by[a]);
+    return `<tr data-open="${i}"><td>${esc(s.name)}</td><td>${v(1)}</td><td>${v(2)}</td><td>${v(3)}</td><td>${s.split}</td><td><b>${s.absent?"Absent":r.complete?fr(r.total):`<span class="pill">${fr(r.total)} provisoire</span>`}</b></td></tr>`}).join("");
+  const ok=c.students.filter(s=>!s.absent&&result(c.grid,s).complete);
+  const avg=ok.length?fr(ok.reduce((t,s)=>t+result(c.grid,s).total,0)/ok.length):"–";
+  $("#main").innerHTML=`<div class="card"><h2>${esc(c.name)}</h2><p class="mut">${ok.length} évaluation(s) complète(s) sur ${c.students.length} · moyenne des complètes : ${avg}</p><div class="tw"><table><thead><tr><th>Élève</th><th>AFL1</th><th>AFL2</th><th>AFL3</th><th>Répartition</th><th>Note /20</th></tr></thead><tbody>${rows}</tbody></table></div><div class="row" style="margin-top:14px"><button class="primary" data-act="csv">Exporter pour tableur (CSV)</button><button data-act="copycsv">Copier le tableau</button></div></div>`;
+}
+
+function vGrid(c){
+  const g=c.grid, sum=g.criteria.filter(k=>k.afl===1).reduce((t,k)=>t+k.max,0);
+  const warn=[];if(g.criteria.some(k=>k.range&&k.range.some(([a,b])=>a>b)))warn.push("Un minimum dépasse son maximum.");if(Math.abs(sum-12)>.001)warn.push(`L'AFL1 totalise ${fr(sum)} points au lieu de 12.`);
+  for(const a of [2,3])if(!g.criteria.some(k=>k.afl===a))warn.push(`Aucun critère pour l'AFL${a}.`);
+  for(const m of [2,4,6])if(Math.abs(g.splitPts[m][3]-m)>.001)warn.push(`Sur ${m} points, le degré 4 devrait valoir ${m}.`);
+  $("#main").innerHTML=`<div class="card"><h2>Grille de « ${esc(c.name)} »</h2><p class="mut">Vérifiez les textes et les points avec votre référentiel. Toute modification recalcule les notes de cette classe.</p>${warn.map(w=>`<p><span class="pill">${w}</span></p>`).join("")}</div>
+  ${g.criteria.map(k=>`<div class="card"><div class="row"><b>AFL${k.afl}</b><div style="flex:1;min-width:200px"><input data-f="title" data-id="${k.id}" value="${esc(k.title)}" aria-label="Intitulé du critère"></div><button class="danger" data-delcrit="${k.id}">Supprimer</button></div>
+  <div class="g4" style="margin-top:10px">${[0,1,2,3].map(i=>`<div><label>Degré ${i+1}</label><textarea data-f="desc" data-i="${i}" data-id="${k.id}">${esc(k.desc[i])}</textarea>${k.afl===1?[0,1].map(j=>`<label>Points ${j?"maxi":"mini"}</label><input inputmode="decimal" data-f="range" data-j="${j}" data-i="${i}" data-id="${k.id}" value="${fr(k.range[i][j])}">`).join(""):""}</div>`).join("")}</div></div>`).join("")}
+  <div class="row" style="margin-bottom:14px">${[1,2,3].map(a=>`<button data-add="${a}">+ Critère AFL${a}</button>`).join("")}</div>
+  <div class="card"><h2>Points des AFL2 et AFL3</h2><p class="mut">Les critères d'un même AFL, ou les rôles choisis, comptent à parts égales.</p><label for="pick">Rôles à choisir en AFL3</label><select id="pick">${[0,1,2,3].map(n=>`<option value="${n}" ${(g.pick||0)===n?"selected":""}>${n||"Tous les critères comptent"}</option>`).join("")}</select>${[2,4,6].map(m=>`<h3>AFL noté sur ${m}</h3><div class="g4">${[0,1,2,3].map(i=>`<div><label>Degré ${i+1}</label><input inputmode="decimal" data-sp="${m}" data-i="${i}" value="${fr(g.splitPts[m][i])}"></div>`).join("")}</div>`).join("")}</div>`;
+  document.querySelectorAll("[data-f]").forEach(el=>el.onchange=()=>{
+    const k=g.criteria.find(x=>x.id===el.dataset.id),f=el.dataset.f,i=+el.dataset.i;
+    if(f==="title")k.title=el.value;else if(f==="desc")k.desc[i]=el.value;else{k.range[i][+el.dataset.j]=num(el.value);k.max=k.range[3][1]}
+    save();if(f==="range")render();
+  });
+  $("#pick").onchange=e=>{g.pick=+e.target.value;save();render()};
+  document.querySelectorAll("[data-sp]").forEach(el=>el.onchange=()=>{g.splitPts[el.dataset.sp][+el.dataset.i]=num(el.value);save();render()});
+}
+
+function vData(c){
+  $("#main").innerHTML=`<div class="card"><h2>Classes</h2><div class="row"><button class="primary" data-act="newclass">Nouvelle classe</button><button data-act="importclass">Importer une classe (fichier)</button><button data-act="rename">Renommer</button><button class="danger" data-act="delclass">Supprimer la classe</button></div></div>
+  <div class="card"><h2>Élèves de « ${esc(c.name)} »</h2><button data-act="addstu">Ajouter des élèves</button><div class="tw"><table><tbody>${c.students.map(s=>`<tr><td>${esc(s.name)}</td><td style="text-align:right"><button class="danger" data-delstu="${s.id}">Retirer</button></td></tr>`).join("")}</tbody></table></div></div>
+  <div class="card"><h2>Sauvegarde</h2><p class="mut">Les données restent sur cet appareil. Après chaque séance, enregistrez une sauvegarde dans l'app Fichiers.</p><div class="row"><button class="primary" data-act="backup">Exporter la sauvegarde</button><button data-act="copybackup">Copier la sauvegarde</button><button data-act="restore">Restaurer une sauvegarde</button></div></div>`;
+}
+
+function csv(c){
+  const q=v=>{let t=String(v);if(/^[=+\-@\t\r]/.test(t))t="'"+t;return '"'+t.replace(/"/g,'""')+'"'};
+  const g=c.grid;
+  const head=["Élève","Mobile",...g.criteria.flatMap(k=>[`AFL${k.afl} ${k.title} (degré)`,`AFL${k.afl} ${k.title} (points)`]),"AFL1","AFL2","AFL3","Répartition","Note /20","État","Observation"];
+  const rows=c.students.map(s=>{const r=result(g,s),v=x=>s.absent?"":fr(x),used=applicable(g,s);
+    return [s.name,s.mobile,...g.criteria.flatMap(k=>{if(s.absent||!used.includes(k))return ["",""];const p=points(g,k,s);return [s.deg[k.id]||"",p===null?"":fr(p)]}),v(r.by[1]),v(r.by[2]),v(r.by[3]),s.split,!s.absent&&r.complete?fr(r.total):"",s.absent?"Absent":r.complete?"Complet":"Incomplet",s.note]});
+  return [head,...rows].map(l=>l.map(q).join(";")).join("\r\n");
+}
+async function share(name,text,type){
+  const file=new File([type==="text/csv"?"﻿"+text:text],name,{type});
+  try{if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file]});return}}
+  catch(e){if(e.name==="AbortError")return}
+  const a=document.createElement("a");a.href=URL.createObjectURL(file);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+}
+async function copy(t){try{await navigator.clipboard.writeText(t);toast("Copié.")}catch(e){toast("Copie refusée par le navigateur.")}}
+const today=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")};
+
+const acts={
+  prev(){sel--;render();scrollTo(0,0)},
+  next(){sel++;render();scrollTo(0,0)},
+  absent(){const s=cls().students[sel];s.absent=!s.absent;save();render()},
+  csv(){const c=cls();share(`notes-${c.name.replace(/[^\p{L}\p{N}]+/gu,"-")}-${today()}.csv`,csv(c),"text/csv")},
+  copycsv(){copy(csv(cls()).replace(/";"/g,'"\t"'))},
+  backup(){share(`sauvegarde-eval-eps-${today()}.json`,JSON.stringify(DB),"application/json")},
+  copybackup(){copy(JSON.stringify(DB))},
+  restore(){dialog('<h2>Restaurer</h2><p class="mut">La sauvegarde remplacera toutes les données actuelles. Choisissez un fichier ou collez son contenu.</p><input type="file" id="f" accept=".json,application/json"><textarea id="t" placeholder="Ou collez ici" style="margin-top:10px"></textarea>',d=>{
+    const apply=t=>{try{const x=JSON.parse(t);if(!valid(x))throw 0;DB=x;sel=0;storageOK=true;save();render();toast("Sauvegarde restaurée.")}catch(e){toast("Sauvegarde illisible : rien n'a été modifié.")}};
+    const f=d.querySelector("#f").files[0];if(f)f.text().then(apply);else apply(d.querySelector("#t").value)})},
+  newclass(){dialog('<h2>Nouvelle classe</h2><label>Nom (classe et APSA)</label><input id="n" placeholder="Terminale 3 – Demi-fond"><label style="margin-top:10px">Élèves, un par ligne</label><textarea id="l"></textarea><p class="mut">La grille de la classe affichée est recopiée.</p>',d=>{
+    const name=d.querySelector("#n").value.trim();if(!name){toast("Indiquez un nom de classe.");return false}
+    DB.classes.push({id:uid(),name,grid:JSON.parse(JSON.stringify(cls().grid)),students:lines(d).map(newStudent)});DB.cur=DB.classes.length-1;sel=0;save()})},
+  importclass(){dialog('<h2>Importer une classe</h2><p class="mut">La classe du fichier est ajoutée aux vôtres, sans rien effacer.</p><input type="file" id="f" accept=".json,application/json">',d=>{
+    const f=d.querySelector("#f").files[0];if(!f){toast("Choisissez un fichier.");return false}
+    f.text().then(t=>{try{const x=JSON.parse(t);if(!valid(x))throw 0;const n=DB.classes.length;DB.classes.push(...x.classes.map(k=>({...k,id:uid()})));DB.cur=n;sel=0;save();view="eval";render();toast("Classe importée.")}catch(e){toast("Fichier illisible : rien n'a été modifié.")}})})},
+  rename(){dialog(`<h2>Renommer</h2><input id="n" value="${esc(cls().name)}">`,d=>{const n=d.querySelector("#n").value.trim();if(!n)return false;cls().name=n;save()})},
+  delclass(){if(DB.classes.length===1){toast("Créez une autre classe avant de supprimer celle-ci.");return}
+    dialog(`<h2>Supprimer « ${esc(cls().name)} » ?</h2><p>Élèves, grille et notes de cette classe seront effacés définitivement.</p>`,()=>{DB.classes.splice(DB.cur,1);DB.cur=0;sel=0;save()})},
+  addstu(){dialog('<h2>Ajouter des élèves</h2><label>Un par ligne</label><textarea id="l" style="min-height:200px"></textarea>',d=>{cls().students.push(...lines(d).map(newStudent));save()})}
+};
+const lines=d=>d.querySelector("#l").value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+
+/* Enregistre et redessine sans perdre la position de lecture. */
+function keep(){save();const y=scrollY,l=$(".list").scrollTop;render();scrollTo(0,y);$(".list").scrollTop=l}
+document.addEventListener("click",e=>{
+  const t=e.target.closest("button,tr[data-open]");if(!t||t.closest("dialog"))return;
+  const d=t.dataset,c=cls();
+  if(d.view){view=d.view;render()}
+  else if(d.stu!==undefined){sel=+d.stu;render()}
+  else if(d.open!==undefined){sel=+d.open;view="eval";render()}
+  else if(d.crit){const s=c.students[sel],v=+d.deg;if(s.deg[d.crit]===v)delete s.deg[d.crit];else s.deg[d.crit]=v;delete s.pts[d.crit];keep()}
+  else if(d.ptc){c.students[sel].pts[d.ptc]=+d.v;keep()}
+  else if(d.role){const s=c.students[sel];s.roles=s.roles.filter(i=>c.grid.criteria.some(k=>k.id===i));
+    if(s.roles.includes(d.role))s.roles=s.roles.filter(i=>i!==d.role);else if(s.roles.length<nbRoles(c.grid))s.roles.push(d.role);else{toast("Retirez d'abord un des rôles choisis.");return}keep()}
+  else if(d.mob){const s=c.students[sel];s.mobile=s.mobile===d.mob?"":d.mob;keep()}
+  else if(d.split){c.students[sel].split=d.split;keep()}
+  else if(d.add){const a=+d.add;c.grid.criteria.push({id:uid(),afl:a,title:"Nouveau critère",desc:["","","",""],max:a===1?4:null,range:a===1?[[0,1],[1.5,2],[2.5,3],[3.5,4]]:null});c.grid.criteria.sort((x,y)=>x.afl-y.afl);save();render()}
+  else if(d.delcrit){dialog("<h2>Supprimer ce critère ?</h2><p>Les degrés saisis pour ce critère ne compteront plus.</p>",()=>{c.grid.criteria=c.grid.criteria.filter(k=>k.id!==d.delcrit);save()})}
+  else if(d.delstu){const s=c.students.find(x=>x.id===d.delstu);dialog(`<h2>Retirer ${esc(s.name)} ?</h2><p>Son évaluation sera effacée définitivement.</p>`,()=>{c.students=c.students.filter(x=>x!==s);save()})}
+  else if(d.act)acts[d.act]();
+});
+render();
+if("serviceWorker" in navigator&&location.protocol==="https:"){try{navigator.serviceWorker.register("sw.js").then(()=>navigator.serviceWorker.ready).then(()=>toast("Application prête à fonctionner hors ligne.")).catch(()=>{})}catch(e){}}
+try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
+</script>
+</body>
+</html>
